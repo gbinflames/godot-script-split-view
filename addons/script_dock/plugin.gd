@@ -18,8 +18,7 @@ var outer_split: HSplitContainer
 var right_split: VSplitContainer
 
 var dock_side := DockSide.RIGHT
-var auto_open_root_script := false
-var auto_open_selected_node_script := false
+var follow_selected_node_script := false
 var last_scene_screen := "3D"
 var returning_to_scene_screen := false
 
@@ -27,8 +26,7 @@ var saved_outer_offset := 650
 var saved_right_offset := 500
 
 var switch_side_button: Button
-var auto_open_button: Button
-var selected_button: Button
+var follow_button: Button
 var button_parent: Control
 
 var editor_selection: EditorSelection
@@ -47,9 +45,6 @@ func _enter_tree() -> void:
 	if not main_screen_changed.is_connected(_on_main_screen_changed):
 		main_screen_changed.connect(_on_main_screen_changed)
 
-	if not scene_changed.is_connected(_on_scene_changed):
-		scene_changed.connect(_on_scene_changed)
-
 	if editor_selection and not editor_selection.selection_changed.is_connected(_on_selection_changed):
 		editor_selection.selection_changed.connect(_on_selection_changed)
 
@@ -60,9 +55,6 @@ func _enter_tree() -> void:
 func _exit_tree() -> void:
 	if main_screen_changed.is_connected(_on_main_screen_changed):
 		main_screen_changed.disconnect(_on_main_screen_changed)
-
-	if scene_changed.is_connected(_on_scene_changed):
-		scene_changed.disconnect(_on_scene_changed)
 
 	if editor_selection and editor_selection.selection_changed.is_connected(_on_selection_changed):
 		editor_selection.selection_changed.disconnect(_on_selection_changed)
@@ -79,6 +71,10 @@ func _on_main_screen_changed(screen_name: String) -> void:
 		return
 
 	if screen_name == "Script":
+		if _script_tab_was_clicked():
+			_restore_everything()
+			return
+
 		if returning_to_scene_screen:
 			return
 
@@ -86,20 +82,55 @@ func _on_main_screen_changed(screen_name: String) -> void:
 		call_deferred("_return_to_scene_screen")
 
 
+func _script_tab_was_clicked() -> bool:
+	var viewport := EditorInterface.get_base_control().get_viewport()
+
+	var focused := viewport.gui_get_focus_owner()
+
+	if _is_script_tab_or_child(focused):
+		return true
+
+	if viewport.has_method("gui_get_hovered_control"):
+		var hovered = viewport.call("gui_get_hovered_control")
+
+		if hovered is Control and _is_script_tab_or_child(hovered):
+			return true
+
+	return false
+
+
+func _is_script_tab_or_child(node: Node) -> bool:
+	var current := node
+
+	while current:
+		if current is Button:
+			if (current as Button).text == "Script":
+				return true
+
+		if current is Control:
+			var tooltip := (current as Control).tooltip_text.to_lower()
+
+			if tooltip == "script" or tooltip.contains("script editor"):
+				return true
+
+		var name_text := str(current.name).to_lower()
+
+		if name_text == "script" or name_text.contains("script"):
+			if current is BaseButton or current is TabBar:
+				return true
+
+		current = current.get_parent()
+
+	return false
+
+
 func _return_to_scene_screen() -> void:
 	EditorInterface.set_main_screen_editor(last_scene_screen)
 	call_deferred("_apply_custom_layout")
 
 
-func _on_scene_changed(scene_root: Node) -> void:
-	if not auto_open_root_script:
-		return
-
-	_queue_node_script_open(scene_root)
-
-
 func _on_selection_changed() -> void:
-	if not auto_open_selected_node_script:
+	if not follow_selected_node_script:
 		return
 
 	call_deferred("_open_selected_node_script")
@@ -152,34 +183,24 @@ func _add_script_toolbar_buttons() -> void:
 	switch_side_button.focus_mode = Control.FOCUS_NONE
 	switch_side_button.pressed.connect(_on_switch_side_pressed)
 
-	auto_open_button = Button.new()
-	auto_open_button.text = "Root"
-	auto_open_button.tooltip_text = "Auto-open root node script when changing scenes"
-	auto_open_button.toggle_mode = true
-	auto_open_button.button_pressed = auto_open_root_script
-	auto_open_button.focus_mode = Control.FOCUS_NONE
-	auto_open_button.toggled.connect(_on_auto_open_toggled)
-
-	selected_button = Button.new()
-	selected_button.text = "Sel"
-	selected_button.tooltip_text = "Auto-open selected node script"
-	selected_button.toggle_mode = true
-	selected_button.button_pressed = auto_open_selected_node_script
-	selected_button.focus_mode = Control.FOCUS_NONE
-	selected_button.toggled.connect(_on_selected_toggled)
+	follow_button = Button.new()
+	follow_button.text = "Follow"
+	follow_button.tooltip_text = "Auto-open selected node script"
+	follow_button.toggle_mode = true
+	follow_button.button_pressed = follow_selected_node_script
+	follow_button.focus_mode = Control.FOCUS_NONE
+	follow_button.toggled.connect(_on_follow_toggled)
 
 	if button_parent:
 		button_parent.add_child(switch_side_button)
-		button_parent.add_child(auto_open_button)
-		button_parent.add_child(selected_button)
+		button_parent.add_child(follow_button)
 	else:
 		add_control_to_container(EditorPlugin.CONTAINER_TOOLBAR, switch_side_button)
-		add_control_to_container(EditorPlugin.CONTAINER_TOOLBAR, auto_open_button)
-		add_control_to_container(EditorPlugin.CONTAINER_TOOLBAR, selected_button)
+		add_control_to_container(EditorPlugin.CONTAINER_TOOLBAR, follow_button)
 
 
 func _remove_script_toolbar_buttons() -> void:
-	for button in [switch_side_button, auto_open_button, selected_button]:
+	for button in [switch_side_button, follow_button]:
 		if button == null:
 			continue
 
@@ -189,8 +210,7 @@ func _remove_script_toolbar_buttons() -> void:
 		button.queue_free()
 
 	switch_side_button = null
-	auto_open_button = null
-	selected_button = null
+	follow_button = null
 	button_parent = null
 
 
@@ -201,12 +221,11 @@ func _on_switch_side_pressed() -> void:
 	call_deferred("_apply_custom_layout")
 
 
-func _on_auto_open_toggled(enabled: bool) -> void:
-	auto_open_root_script = enabled
+func _on_follow_toggled(enabled: bool) -> void:
+	follow_selected_node_script = enabled
 
-
-func _on_selected_toggled(enabled: bool) -> void:
-	auto_open_selected_node_script = enabled
+	if follow_selected_node_script:
+		call_deferred("_open_selected_node_script")
 
 
 func _apply_custom_layout() -> void:
