@@ -2,6 +2,10 @@
 
 A Godot editor plugin that keeps your code and your game side-by-side.
 
+## Full Disclosure
+
+This plugin was 100% vibe coded with OpenAI Codex.
+
 ## Why?
 
 I originally created this plugin after being forced into **Single Window Mode** due to scaling issues with Godot's detached editor windows. Rather than fight with the editor layout, I realized I actually preferred having my scripts visible alongside the 2D/3D viewport anyway.
