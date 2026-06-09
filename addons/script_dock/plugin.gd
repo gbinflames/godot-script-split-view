@@ -1,6 +1,11 @@
 @tool
 extends EditorPlugin
 
+const SETTING_DOCK_SIDE := "script_dock/dock_side"
+const SETTING_OUTER_OFFSET := "script_dock/outer_split_offset"
+const SETTING_RIGHT_OFFSET := "script_dock/right_split_offset"
+const SETTING_AUTOLOAD := "script_dock/autoload_scripts"
+
 enum DockSide {
 	LEFT,
 	RIGHT,
@@ -18,7 +23,7 @@ var outer_split: HSplitContainer
 var right_split: VSplitContainer
 
 var dock_side := DockSide.RIGHT
-var follow_selected_node_script := false
+var follow_selected_node_script := true
 var last_scene_screen := "3D"
 var returning_to_scene_screen := false
 
@@ -26,7 +31,9 @@ var saved_outer_offset := 650
 var saved_right_offset := 500
 
 var switch_side_button: Button
-var follow_button: Button
+var autoload_box: HBoxContainer
+var autoload_label: Label
+var autoload_checkbox: CheckBox
 var button_parent: Control
 
 var editor_selection: EditorSelection
@@ -34,6 +41,8 @@ var pending_script: Script
 
 
 func _enter_tree() -> void:
+	_load_settings()
+
 	script_editor = EditorInterface.get_script_editor()
 
 	if script_editor == null:
@@ -50,9 +59,12 @@ func _enter_tree() -> void:
 
 	call_deferred("_add_script_toolbar_buttons")
 	call_deferred("_apply_custom_layout")
+	call_deferred("_open_selected_node_script")
 
 
 func _exit_tree() -> void:
+	_save_settings()
+
 	if main_screen_changed.is_connected(_on_main_screen_changed):
 		main_screen_changed.disconnect(_on_main_screen_changed)
 
@@ -61,6 +73,41 @@ func _exit_tree() -> void:
 
 	_remove_script_toolbar_buttons()
 	_restore_everything()
+
+
+func _load_settings() -> void:
+	var settings := EditorInterface.get_editor_settings()
+
+	if settings.has_setting(SETTING_DOCK_SIDE):
+		dock_side = DockSide.LEFT if str(settings.get_setting(SETTING_DOCK_SIDE)) == "LEFT" else DockSide.RIGHT
+
+	if settings.has_setting(SETTING_OUTER_OFFSET):
+		saved_outer_offset = int(settings.get_setting(SETTING_OUTER_OFFSET))
+
+	if settings.has_setting(SETTING_RIGHT_OFFSET):
+		saved_right_offset = int(settings.get_setting(SETTING_RIGHT_OFFSET))
+
+	if settings.has_setting(SETTING_AUTOLOAD):
+		follow_selected_node_script = bool(settings.get_setting(SETTING_AUTOLOAD))
+
+
+func _save_settings() -> void:
+	_remember_offsets()
+
+	var settings := EditorInterface.get_editor_settings()
+
+	settings.set_setting(SETTING_DOCK_SIDE, "LEFT" if dock_side == DockSide.LEFT else "RIGHT")
+	settings.set_setting(SETTING_OUTER_OFFSET, saved_outer_offset)
+	settings.set_setting(SETTING_RIGHT_OFFSET, saved_right_offset)
+	settings.set_setting(SETTING_AUTOLOAD, follow_selected_node_script)
+
+
+func _remember_offsets() -> void:
+	if outer_split:
+		saved_outer_offset = outer_split.split_offset
+
+	if right_split:
+		saved_right_offset = right_split.split_offset
 
 
 func _on_main_screen_changed(screen_name: String) -> void:
@@ -82,62 +129,18 @@ func _on_main_screen_changed(screen_name: String) -> void:
 		call_deferred("_return_to_scene_screen")
 
 
-func _script_tab_was_clicked() -> bool:
-	var viewport := EditorInterface.get_base_control().get_viewport()
-
-	var focused := viewport.gui_get_focus_owner()
-
-	if _is_script_tab_or_child(focused):
-		return true
-
-	if viewport.has_method("gui_get_hovered_control"):
-		var hovered = viewport.call("gui_get_hovered_control")
-
-		if hovered is Control and _is_script_tab_or_child(hovered):
-			return true
-
-	return false
-
-
-func _is_script_tab_or_child(node: Node) -> bool:
-	var current := node
-
-	while current:
-		if current is Button:
-			if (current as Button).text == "Script":
-				return true
-
-		if current is Control:
-			var tooltip := (current as Control).tooltip_text.to_lower()
-
-			if tooltip == "script" or tooltip.contains("script editor"):
-				return true
-
-		var name_text := str(current.name).to_lower()
-
-		if name_text == "script" or name_text.contains("script"):
-			if current is BaseButton or current is TabBar:
-				return true
-
-		current = current.get_parent()
-
-	return false
-
-
 func _return_to_scene_screen() -> void:
 	EditorInterface.set_main_screen_editor(last_scene_screen)
 	call_deferred("_apply_custom_layout")
 
 
 func _on_selection_changed() -> void:
-	if not follow_selected_node_script:
-		return
-
-	call_deferred("_open_selected_node_script")
+	if follow_selected_node_script:
+		call_deferred("_open_selected_node_script")
 
 
 func _open_selected_node_script() -> void:
-	if editor_selection == null:
+	if not follow_selected_node_script or editor_selection == null:
 		return
 
 	var selected_nodes := editor_selection.get_selected_nodes()
@@ -183,46 +186,58 @@ func _add_script_toolbar_buttons() -> void:
 	switch_side_button.focus_mode = Control.FOCUS_NONE
 	switch_side_button.pressed.connect(_on_switch_side_pressed)
 
-	follow_button = Button.new()
-	follow_button.text = "Follow"
-	follow_button.tooltip_text = "Auto-open selected node script"
-	follow_button.toggle_mode = true
-	follow_button.button_pressed = follow_selected_node_script
-	follow_button.focus_mode = Control.FOCUS_NONE
-	follow_button.toggled.connect(_on_follow_toggled)
+	autoload_box = HBoxContainer.new()
+	autoload_box.tooltip_text = "Automatically load the selected node's script into the docked editor"
+
+	autoload_label = Label.new()
+	autoload_label.text = "Autoload Scripts"
+
+	autoload_checkbox = CheckBox.new()
+	autoload_checkbox.button_pressed = follow_selected_node_script
+	autoload_checkbox.focus_mode = Control.FOCUS_NONE
+	autoload_checkbox.toggled.connect(_on_follow_toggled)
+
+	autoload_box.add_child(autoload_label)
+	autoload_box.add_child(autoload_checkbox)
 
 	if button_parent:
 		button_parent.add_child(switch_side_button)
-		button_parent.add_child(follow_button)
+		button_parent.add_child(autoload_box)
 	else:
 		add_control_to_container(EditorPlugin.CONTAINER_TOOLBAR, switch_side_button)
-		add_control_to_container(EditorPlugin.CONTAINER_TOOLBAR, follow_button)
+		add_control_to_container(EditorPlugin.CONTAINER_TOOLBAR, autoload_box)
 
 
 func _remove_script_toolbar_buttons() -> void:
-	for button in [switch_side_button, follow_button]:
-		if button == null:
+	for control in [switch_side_button, autoload_box]:
+		if control == null:
 			continue
 
-		if button.get_parent():
-			button.get_parent().remove_child(button)
+		if control.get_parent():
+			control.get_parent().remove_child(control)
 
-		button.queue_free()
+		control.queue_free()
 
 	switch_side_button = null
-	follow_button = null
+	autoload_box = null
+	autoload_label = null
+	autoload_checkbox = null
 	button_parent = null
 
 
 func _on_switch_side_pressed() -> void:
+	_remember_offsets()
+
 	dock_side = DockSide.LEFT if dock_side == DockSide.RIGHT else DockSide.RIGHT
 
+	_save_settings()
 	_restore_everything()
 	call_deferred("_apply_custom_layout")
 
 
 func _on_follow_toggled(enabled: bool) -> void:
 	follow_selected_node_script = enabled
+	_save_settings()
 
 	if follow_selected_node_script:
 		call_deferred("_open_selected_node_script")
@@ -232,10 +247,7 @@ func _apply_custom_layout() -> void:
 	if outer_split:
 		return
 
-	dock_v_split_center = _find_node_by_name(
-		EditorInterface.get_base_control(),
-		"DockVSplitCenter"
-	) as Control
+	dock_v_split_center = _find_node_by_name(EditorInterface.get_base_control(), "DockVSplitCenter") as Control
 
 	if dock_v_split_center == null:
 		push_warning("Could not find DockVSplitCenter.")
@@ -257,7 +269,6 @@ func _apply_custom_layout() -> void:
 
 	dock_v_split_center.remove_child(main_screen)
 	dock_v_split_center.remove_child(bottom_dock)
-
 	original_center_parent.remove_child(dock_v_split_center)
 
 	outer_split = HSplitContainer.new()
@@ -291,11 +302,7 @@ func _apply_custom_layout() -> void:
 
 
 func _restore_everything() -> void:
-	if outer_split:
-		saved_outer_offset = outer_split.split_offset
-
-	if right_split:
-		saved_right_offset = right_split.split_offset
+	_remember_offsets()
 
 	if script_editor and script_editor.get_parent():
 		script_editor.get_parent().remove_child(script_editor)
@@ -344,6 +351,47 @@ func _apply_offsets() -> void:
 func _collapse_bottom_dock() -> void:
 	if right_split:
 		right_split.split_offset = right_split.size.y - 8
+
+
+func _script_tab_was_clicked() -> bool:
+	var viewport := EditorInterface.get_base_control().get_viewport()
+
+	var focused := viewport.gui_get_focus_owner()
+
+	if _is_script_tab_or_child(focused):
+		return true
+
+	if viewport.has_method("gui_get_hovered_control"):
+		var hovered = viewport.call("gui_get_hovered_control")
+
+		if hovered is Control and _is_script_tab_or_child(hovered):
+			return true
+
+	return false
+
+
+func _is_script_tab_or_child(node: Node) -> bool:
+	var current := node
+
+	while current:
+		if current is Button and (current as Button).text == "Script":
+			return true
+
+		if current is Control:
+			var tooltip := (current as Control).tooltip_text.to_lower()
+
+			if tooltip == "script" or tooltip.contains("script editor"):
+				return true
+
+		var name_text := str(current.name).to_lower()
+
+		if name_text == "script" or name_text.contains("script"):
+			if current is BaseButton or current is TabBar:
+				return true
+
+		current = current.get_parent()
+
+	return false
 
 
 func _find_script_popout_button_parent(node: Node) -> Control:
