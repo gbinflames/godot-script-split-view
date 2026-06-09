@@ -1,0 +1,27 @@
+[gd_scene format=3 uid="uid://24rkekwidequ"]
+
+[ext_resource type="Script" uid="uid://cjr4dt7y4akvr" path="res://main.gd" id="1_ig7tw"]
+[ext_resource type="Script" uid="uid://nxw35xa1fr8c" path="res://test.gd" id="2_0xm2m"]
+
+[node name="Control" type="Control" unique_id=720630123]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_ig7tw")
+
+[node name="Tree" type="Tree" parent="." unique_id=1014444382]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Control" type="Control" parent="." unique_id=1709164223]
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+script = ExtResource("2_0xm2m")
