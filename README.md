@@ -2,6 +2,8 @@
 
 A Godot editor plugin that keeps your code and your game side-by-side.
 
+<img src="addons/script_dock/assets/Screenshot.png" alt="Screenshot">
+
 ## Full Disclosure
 
 This plugin was 100% vibe coded with OpenAI Codex.
@@ -33,12 +35,13 @@ With ScriptDock enabled, the editor layout looks something like this:
 ```text
 ┌───────────────────────────┬──────────────────────┐
 │                           │                      │
-│       2D / 3D View        │    Script Editor     │
-│                           ├──────────────────────┤
 │                           │                      │
+│                           │    Script Editor     │
+│       2D / 3D View        │                      │
+│                           │                      │
+│                           ├──────────────────────┤
 │                           │ Output / Debugger /  │
 │                           │ Bottom Dock          │
-│                           │                      │
 └───────────────────────────┴──────────────────────┘
 ```
 
